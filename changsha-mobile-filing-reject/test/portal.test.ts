@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { chromium, type Page } from 'playwright';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createServer } from 'node:http';
@@ -81,6 +81,53 @@ test('云浏览器模式复用现有标签页，关闭 Skill 只断开 CDP 连�
   } finally {
     await verifyBrowser.close();
   }
+});
+
+test('图片验证码登录：保存最新验证码图片，员工提供答案后才请求短信', async t => {
+  const { page, dir } = await setup(t);
+  const config = loadConfig({
+    LOGIN_PHONE: '13800138000',
+    STATE_DIR: dir,
+    LOGIN_TIMEOUT_MS: '5000',
+  });
+  await page.route(config.baseUrl, r => r.fulfill({
+    contentType: 'text/html; charset=utf-8',
+    body: `<body>
+      <style>
+        .agree-box { display: flex; align-items: center; gap: 8px; }
+        .el-checkbox__inner { display: inline-block; width: 16px; height: 16px; border: 1px solid #777; }
+        .el-checkbox__original { position: absolute; left: -10000px; width: 1px; height: 1px; }
+      </style>
+      <div class="agree-box">
+        <label class="el-checkbox"><span class="el-checkbox__input"><span class="el-checkbox__inner"></span><input id="agree" type="checkbox" class="el-checkbox__original"></span></label>
+        <div class="agree-box-cc"><label class="agree-label">我已阅读并同意</label><a>《隐私协议》</a></div>
+      </div>
+      <input placeholder="请输入手机号">
+      <input placeholder="验证码">
+      <div class="login-code"><img class="login-code-img" alt="图片验证码"
+        src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='40'%3E%3Crect width='120' height='40' fill='white'/%3E%3Ctext x='10' y='28' font-size='24'%3EA7B9%3C/text%3E%3C/svg%3E"></div>
+      <button id="request" onclick="this.disabled=true;this.textContent='60秒后重新获取';document.querySelector('#state').textContent='短信已发送'">获取短信验证码</button>
+      <input placeholder="请输入短信验证码">
+      <button id="login">登 录</button>
+      <div id="state"></div>
+    </body>`,
+  }));
+  const portal = new RejectPortal(page, config);
+  const start = await portal.beginLogin();
+  assert.equal(start.status, 'captcha_required');
+  assert.equal(start.agreementAccepted, true);
+  assert.match(start.challenge ?? '', /验证码图片/);
+  assert.ok(start.captchaImagePath);
+  const image = await readFile(start.captchaImagePath!);
+  assert.ok(image.length > 100);
+  assert.equal(image.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+  assert.equal(await page.getByPlaceholder('请输入验证码').inputValue(), '');
+  assert.equal(await page.locator('#state').innerText(), '');
+
+  const requested = await portal.requestSmsCode('A7B9');
+  assert.equal(requested.status, 'sms_code_required');
+  assert.equal(await page.getByPlaceholder('请输入验证码').inputValue(), 'A7B9');
+  assert.equal(await page.locator('#state').innerText(), '短信已发送');
 });
 
 test('分阶段登录：自动填手机号并勾选协议，员工提供计算答案和短信验证码', async t => {
