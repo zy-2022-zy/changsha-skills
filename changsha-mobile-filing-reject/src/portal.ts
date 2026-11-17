@@ -20,6 +20,27 @@ export class RejectPortal {
   constructor(readonly page: Page, private readonly config: Config, private readonly browser?: Browser) {}
 
   static async launch(config: Config): Promise<RejectPortal> {
+    if (config.cdpUrl) {
+      const browser = await chromium.connectOverCDP(config.cdpUrl, { timeout: config.cdpConnectTimeoutMs });
+      try {
+        const context = browser.contexts()[0];
+        if (!context) throw new Error('云浏览器没有可用的默认浏览器上下文，请检查 Chromium 是否正常启动。');
+        const origin = new URL(config.baseUrl).origin;
+        const pages = context.pages();
+        // 优先复用门户原有标签页，避免新标签页丢失 sessionStorage 登录状态。
+        const page = pages.find(candidate => {
+          try { return new URL(candidate.url()).origin === origin; } catch { return false; }
+        }) ?? pages.find(candidate => candidate.url() === 'about:blank')
+          ?? (pages.length === 1 ? pages[0] : undefined)
+          ?? await context.newPage();
+        return new RejectPortal(page, config, browser);
+      } catch (e) {
+        await browser.close().catch(() => undefined);
+        throw e;
+      }
+    }
+
+    // 未配置云浏览器地址时，继续兼容原来的本地浏览器运行方式。
     await mkdir(config.authDir, { recursive: true });
     const browser = await chromium.launch({ headless: false, channel: config.browserChannel, args: ['--disable-gpu'] });
     try {
@@ -39,6 +60,8 @@ export class RejectPortal {
   }
 
   private async saveAuth(): Promise<void> {
+    // 云浏览器会在服务器端持久化登录状态，不把 Cookie 或会话信息复制到员工电脑。
+    if (this.config.cdpUrl) return;
     if (!await this.page.getByText('端口上报管理', { exact: true }).isVisible().catch(() => false)) return;
     await mkdir(this.config.authDir, { recursive: true });
     const storage = await this.page.context().storageState();
@@ -71,6 +94,11 @@ export class RejectPortal {
   }
 
   async close(): Promise<void> {
+    if (this.config.cdpUrl) {
+      // 只断开 Playwright 的 CDP 连接，不关闭云浏览器、上下文或当前标签页。
+      await this.browser?.close().catch(() => undefined);
+      return;
+    }
     await this.saveAuth().catch(() => undefined);
     await this.page.context().close().catch(() => undefined);
     await this.browser?.close();
