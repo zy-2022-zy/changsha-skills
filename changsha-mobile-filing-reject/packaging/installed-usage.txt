@@ -30,3 +30,8 @@ scripts\run.cmd export --date 2026-11-05 --execute
 scripts\run.cmd results --date 2026-11-05
 
 以上日期仅为命令示例，请替换为实际查询日期。
+WorkBuddy MCP 交互登录（开发联调）：
+- 技能源码目录运行 pnpm install --frozen-lockfile，并在该目录配置本机 .env 中的 LOGIN_PHONE、BROWSER_CDP_URL。
+- WorkBuddy MCP Server 配置使用 stdio，命令 pnpm，参数 run mcp，工作目录为技能源码目录。
+- Agent 通过 login_start 获取并展示图形验证码图片，用户回复后调用 login_verify_captcha；再询问短信验证码并调用 login_submit_sms。
+- 当前版本使用单个云浏览器会话，只支持单员工串行联调。详细配置见技能目录中的 SKILL.md「WorkBuddy MCP 交互登录」。
