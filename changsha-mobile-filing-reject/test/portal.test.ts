@@ -148,7 +148,7 @@ test('分阶段登录：自动填手机号并勾选协议，员工提供计算�
     <input placeholder="请输入验证码">
     <button id="request" onclick="this.disabled=true;this.textContent='60秒后重新获取';document.querySelector('#state').textContent='短信已发送'">获取验证码</button>
     <input placeholder="请输入短信验证码">
-    <button id="login" onclick="document.body.insertAdjacentHTML('beforeend','<div>端口上报管理</div>')">登录</button>
+    <button id="login" onclick="document.body.insertAdjacentHTML('beforeend','<div>端口上报管理</div>')">登 录</button>
     <div id="state"></div>
   </body>` }));
   const portal = new RejectPortal(page, config);
