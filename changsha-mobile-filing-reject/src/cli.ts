@@ -37,11 +37,32 @@ async function main(): Promise<void> {
   const allowed: Record<string, string[]> = {
     export: ['date', 'start', 'end', 'execute', 'header-row', 'no-sedp'],
     results: ['date', 'start', 'end', 'batch-id', 'header-row', 'no-sedp'],
-    inspect: ['file', 'header-row'], sedp: ['file', 'output', 'header-row'],\n    'login-start': [], 'login-verify': ['answer'], 'login-submit': ['sms-code-stdin'],
+    inspect: ['file', 'header-row'], sedp: ['file', 'output', 'header-row'],
+    'login-start': [], 'login-verify': ['answer'], 'login-submit': ['sms-code-stdin'],
   };
   if (!allowed[command]) throw new Error(`未知命令：${command}`);
   for (const key of Object.keys(values)) if (!allowed[command].includes(key)) throw new Error(`${command} 不支持 --${key}。`);
-  if (command === 'login-start' || command === 'login-verify' || command === 'login-submit') {\n    const config = loadConfig();\n    const portal = await RejectPortal.launch(config);\n    try {\n      if (command === 'login-start') {\n        console.log(JSON.stringify(await portal.beginLogin(), null, 2));\n      } else if (command === 'login-verify') {\n        console.log(JSON.stringify(await portal.requestSmsCode(values.answer), null, 2));\n      } else {\n        if (!values['sms-code-stdin']) throw new Error('login-submit 必须使用 --sms-code-stdin，从标准输入安全读取短信验证码。');\n        let code = '';\n        for await (const chunk of process.stdin) code += String(chunk);\n        code = code.trim();\n        if (!code) throw new Error('标准输入中没有收到短信验证码。');\n        await portal.submitSmsCode(code);\n        console.log(JSON.stringify({ status: 'authenticated', message: '登录成功。' }, null, 2));\n      }\n    } finally { await portal.close(); }\n    return;\n  }\n  const headerRow = values['header-row'] === undefined ? undefined : Number(values['header-row']);
+  if (command === 'login-start' || command === 'login-verify' || command === 'login-submit') {
+    const config = loadConfig();
+    const portal = await RejectPortal.launch(config);
+    try {
+      if (command === 'login-start') {
+        console.log(JSON.stringify(await portal.beginLogin(), null, 2));
+      } else if (command === 'login-verify') {
+        console.log(JSON.stringify(await portal.requestSmsCode(values.answer), null, 2));
+      } else {
+        if (!values['sms-code-stdin']) throw new Error('login-submit 必须使用 --sms-code-stdin，从标准输入安全读取短信验证码。');
+        let code = '';
+        for await (const chunk of process.stdin) code += String(chunk);
+        code = code.trim();
+        if (!code) throw new Error('标准输入中没有收到短信验证码。');
+        await portal.submitSmsCode(code);
+        console.log(JSON.stringify({ status: 'authenticated', message: '登录成功。' }, null, 2));
+      }
+    } finally { await portal.close(); }
+    return;
+  }
+  const headerRow = values['header-row'] === undefined ? undefined : Number(values['header-row']);
   if (headerRow !== undefined && (!Number.isSafeInteger(headerRow) || headerRow < 1)) throw new Error('--header-row 必须是正整数。');
   if (command === 'inspect') {
     if (!values.file) throw new Error('inspect 需要 --file。');
