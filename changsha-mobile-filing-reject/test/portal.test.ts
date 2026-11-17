@@ -100,7 +100,7 @@ test('分阶段登录：自动填手机号并勾选协议，员工提供计算�
   const start = await portal.beginLogin();
   assert.equal(start.status, 'challenge_required');
   assert.equal(start.agreementAccepted, true);
-  assert.match(start.challenge ?? '', /3 \\+ 5/);
+  assert.match(start.challenge ?? '', /3 \+ 5/);
   assert.equal(await page.locator('#agree').isChecked(), true);
   assert.equal(await page.getByPlaceholder('请输入手机号').inputValue(), '13800138000');
   assert.equal(await page.getByPlaceholder('请输入验证码').inputValue(), '');
