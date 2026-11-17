@@ -96,8 +96,8 @@ export class RejectPortal {
     const challengeInput = this.loginChallengeInput();
     if (await challengeInput.count()) {
       const bodyText = await this.page.locator('body').innerText().catch(() => '');
-      const challenge = bodyText.split(/\\r?\\n/).map(line => line.trim())
-        .find(line => /计算|算式|验证码/.test(line) && /[0-9０-９].*[+＋\\-－×xX*÷／/＝=]/.test(line))
+      const challenge = bodyText.split(/\r?\n/).map(line => line.trim())
+        .find(line => /计算|算式|验证码/.test(line) && /[0-9０-９].*[+＋\-－×xX*÷／/=]/.test(line))
         ?? bodyText.split(/\\r?\\n/).map(line => line.trim()).find(line => /计算|算式|验证码/.test(line))
         ?? '登录页要求完成计算/验证码验证，请查看页面提示并把题目转发给员工。';
       return { status: 'challenge_required', challenge: challenge.slice(0, 240), agreementAccepted };
@@ -146,7 +146,7 @@ export class RejectPortal {
     const button = buttons.first();
     if (await button.isDisabled()) {
       const label = (await button.innerText()).trim();
-      if (/\\d+\\s*秒|已发送|重新获取/.test(label)) return;
+      if (/\d+\s*秒|已发送|重新获取/.test(label)) return;
       throw new Error('获取短信验证码按钮当前不可用，未重复点击。');
     }
     await button.click();
@@ -167,7 +167,7 @@ export class RejectPortal {
   /** 员工在聊天窗口提供短信验证码后，自动填写并提交登录。 */
   async submitSmsCode(code: string): Promise<void> {
     const normalized = code.trim();
-    if (!/^\\d{4,8}$/.test(normalized)) throw new Error('短信验证码格式不正确，请检查位数后重试。');
+    if (!/^\d{4,8}$/.test(normalized)) throw new Error('短信验证码格式不正确，请检查位数后重试。');
 
     const smsInput = this.page.locator(
       'input[placeholder*="短信验证码"], input[placeholder*="手机验证码"], input[name*="sms" i]'
@@ -175,7 +175,7 @@ export class RejectPortal {
     await smsInput.waitFor({ state: 'visible', timeout: 10_000 });
     await smsInput.fill(normalized);
 
-    const loginButton = this.page.locator('button:visible').filter({ hasText: /^\\s*登录\\s*$/ });
+    const loginButton = this.page.locator('button:visible').filter({ hasText: /^\s*登录\s*$/ });
     if (await loginButton.count() !== 1) throw new Error('无法唯一定位登录按钮，请检查登录页面结构。');
     await loginButton.click();
 
