@@ -9,7 +9,7 @@
         "/c",
         "pnpm run mcp"
       ],
-      "cwd": "C:\\\\Users\\\\你的用户名\\\\项目目录\\\\changsha-mobile-filing-reject",
+      "cwd": "C:\\Users\\你的用户名\\项目目录\\changsha-mobile-filing-reject",
       "timeout": 120000
     }
   }
