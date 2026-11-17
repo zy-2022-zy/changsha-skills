@@ -98,7 +98,7 @@ export class RejectPortal {
       const bodyText = await this.page.locator('body').innerText().catch(() => '');
       const challenge = bodyText.split(/\r?\n/).map(line => line.trim())
         .find(line => /计算|算式|验证码/.test(line) && /[0-9０-９].*[+＋\-－×xX*÷／/=]/.test(line))
-        ?? bodyText.split(/\\r?\\n/).map(line => line.trim()).find(line => /计算|算式|验证码/.test(line))
+        ?? bodyText.split(/\r?\n/).map(line => line.trim()).find(line => /计算|算式|验证码/.test(line))
         ?? '登录页要求完成计算/验证码验证，请查看页面提示并把题目转发给员工。';
       return { status: 'challenge_required', challenge: challenge.slice(0, 240), agreementAccepted };
     }
