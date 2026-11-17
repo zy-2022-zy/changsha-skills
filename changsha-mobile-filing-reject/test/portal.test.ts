@@ -87,7 +87,10 @@ test('分阶段登录：自动填手机号并勾选协议，员工提供计算�
   const { page, dir } = await setup(t);
   const config = loadConfig({ LOGIN_PHONE: '13800138000', AUTH_DIR: dir, LOGIN_TIMEOUT_MS: '5000' });
   await page.route(config.baseUrl, r => r.fulfill({ contentType: 'text/html; charset=utf-8', body: `<body>
-    <label><input id="agree" type="checkbox">我已阅读并同意服务协议</label>
+    <div class="agree-box">
+      <label class="el-checkbox"><span class="el-checkbox__input"><span class="el-checkbox__inner"></span><input id="agree" type="checkbox" class="el-checkbox__original"></span></label>
+      <div class="agree-box-cc"><label class="agree-label">我已阅读并同意</label><a class="agree-link">《隐私协议》</a><a class="agree-link">《诚信承诺协议》</a></div>
+    </div>
     <div>请完成计算验证：3 + 5 = ?</div>
     <input placeholder="请输入手机号">
     <input placeholder="请输入验证码">
