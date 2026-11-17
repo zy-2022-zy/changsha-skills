@@ -83,18 +83,36 @@ test('云浏览器模式复用现有标签页，关闭 Skill 只断开 CDP 连�
   }
 });
 
-test('登录表单延迟渲染时仍填写并核验手机号，不填写两类验证码', async t => {
+test('分阶段登录：自动填手机号并勾选协议，员工提供计算答案和短信验证码', async t => {
   const { page, dir } = await setup(t);
   const config = loadConfig({ LOGIN_PHONE: '13800138000', AUTH_DIR: dir, LOGIN_TIMEOUT_MS: '5000' });
-  await page.route(config.baseUrl, r => r.fulfill({ contentType: 'text/html; charset=utf-8', body: `<body><div id="form"></div>
-    <script>setTimeout(() => document.querySelector('#form').innerHTML = '<input placeholder="请输入手机号"><input placeholder="验证码"><input placeholder="请输入短信验证码">', 300)</script></body>` }));
-  const login = new RejectPortal(page, config).login();
-  void login.catch(() => undefined);
-  await page.waitForFunction(() => (document.querySelector('input[placeholder="请输入手机号"]') as HTMLInputElement)?.value === '13800138000');
-  assert.equal(await page.getByPlaceholder('验证码', { exact: true }).inputValue(), '');
-  assert.equal(await page.getByPlaceholder('请输入短信验证码').inputValue(), '');
-  await page.evaluate(() => { const menu = document.createElement('div'); menu.textContent = '端口上报管理'; document.body.append(menu); });
-  await login;
+  await page.route(config.baseUrl, r => r.fulfill({ contentType: 'text/html; charset=utf-8', body: `<body>
+    <label><input id="agree" type="checkbox">我已阅读并同意服务协议</label>
+    <div>请完成计算验证：3 + 5 = ?</div>
+    <input placeholder="请输入手机号">
+    <input placeholder="请输入验证码">
+    <button id="request" onclick="this.disabled=true;this.textContent='60秒后重新获取';document.querySelector('#state').textContent='短信已发送'">获取验证码</button>
+    <input placeholder="请输入短信验证码">
+    <button id="login" onclick="document.body.insertAdjacentHTML('beforeend','<div>端口上报管理</div>')">登录</button>
+    <div id="state"></div>
+  </body>` }));
+  const portal = new RejectPortal(page, config);
+  const start = await portal.beginLogin();
+  assert.equal(start.status, 'challenge_required');
+  assert.equal(start.agreementAccepted, true);
+  assert.match(start.challenge ?? '', /3 \\+ 5/);
+  assert.equal(await page.locator('#agree').isChecked(), true);
+  assert.equal(await page.getByPlaceholder('请输入手机号').inputValue(), '13800138000');
+  assert.equal(await page.getByPlaceholder('请输入验证码').inputValue(), '');
+
+  const requested = await portal.requestSmsCode('8');
+  assert.equal(requested.status, 'sms_code_required');
+  assert.equal(await page.getByPlaceholder('请输入验证码').inputValue(), '8');
+  assert.equal(await page.locator('#state').innerText(), '短信已发送');
+
+  await portal.submitSmsCode('123456');
+  assert.equal(await page.getByText('端口上报管理', { exact: true }).isVisible(), true);
+  assert.equal(await page.getByPlaceholder('请输入短信验证码').inputValue(), '123456');
 });
 
 test('本地页面验证筛选及导出确认框，驳回时间和导出均生效', async t => {
