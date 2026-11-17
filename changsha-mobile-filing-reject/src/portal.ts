@@ -229,7 +229,7 @@ export class RejectPortal {
     await smsInput.waitFor({ state: 'visible', timeout: 10_000 });
     await smsInput.fill(normalized);
 
-    const loginButton = this.page.locator('button:visible').filter({ hasText: /^\s*登录\s*$/ });
+    const loginButton = this.page.locator('button:visible').filter({ hasText: /^\s*登\s*录\s*$/ });
     if (await loginButton.count() !== 1) throw new Error('无法唯一定位登录按钮，请检查登录页面结构。');
     await loginButton.click();
 
