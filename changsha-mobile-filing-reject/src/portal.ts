@@ -73,22 +73,122 @@ export class RejectPortal {
     }
   }
 
-  async login(): Promise<void> {
+  /** 自动准备登录页面；遇到人机验证时把题目交给员工，不自动破解验证。 */
+  async beginLogin(): Promise<{ status: 'authenticated' | 'challenge_required' | 'sms_code_required'; challenge?: string; agreementAccepted: boolean }> {
     await this.page.goto(this.config.baseUrl, { waitUntil: 'domcontentloaded' });
     const menu = this.page.getByText('端口上报管理', { exact: true }).filter({ visible: true }).first();
     const phone = this.page.locator('input[placeholder*="手机号"], input[type="tel"], input[name*="phone" i]')
       .filter({ visible: true }).first();
-    // SPA 在 DOMContentLoaded 后才渲染登录表单，不能用瞬时 isVisible 跳过填写。
+
+    // SPA 在 DOMContentLoaded 后才渲染登录表单，等待登录菜单或手机号输入框出现。
     await menu.or(phone).first().waitFor({ state: 'visible', timeout: 30_000 });
-    if (!await menu.isVisible()) {
-      if (this.config.loginPhone) {
-        await phone.fill(this.config.loginPhone);
-        await phone.press('Tab');
-        if (await phone.inputValue() !== this.config.loginPhone) throw new Error('手机号填写后校验失败，请检查登录表单。');
-        console.error('登录手机号已自动填写并核验。');
-      }
-      console.error('请在浏览器完成人工登录：手机号、计算题及短信验证码。程序会自动继续。');
-      await menu.waitFor({ state: 'visible', timeout: this.config.loginTimeoutMs });
+    if (await menu.isVisible().catch(() => false)) {
+      await this.saveAuth();
+      return { status: 'authenticated', agreementAccepted: false };
+    }
+
+    if (!this.config.loginPhone) throw new Error('未配置 LOGIN_PHONE，无法自动填写登录手机号。');
+    await phone.fill(this.config.loginPhone);
+    await phone.press('Tab');
+    if (await phone.inputValue() !== this.config.loginPhone) throw new Error('手机号填写后校验失败，请检查登录表单。');
+
+    const agreementAccepted = await this.acceptLoginAgreement();
+    const challengeInput = this.loginChallengeInput();
+    if (await challengeInput.count()) {
+      const bodyText = await this.page.locator('body').innerText().catch(() => '');
+      const challenge = bodyText.split(/\\r?\\n/).map(line => line.trim())
+        .find(line => /计算|算式|验证码/.test(line) && /[0-9０-９].*[+＋\\-－×xX*÷／/＝=]/.test(line))
+        ?? bodyText.split(/\\r?\\n/).map(line => line.trim()).find(line => /计算|算式|验证码/.test(line))
+        ?? '登录页要求完成计算/验证码验证，请查看页面提示并把题目转发给员工。';
+      return { status: 'challenge_required', challenge: challenge.slice(0, 240), agreementAccepted };
+    }
+
+    // 未发现独立计算验证输入框时，尝试直接请求短信；不触碰图片验证码或其他人机验证。
+    await this.clickSmsRequest();
+    return { status: 'sms_code_required', agreementAccepted };
+  }
+
+  /** 定位非短信验证码输入框，供员工提供普通计算题答案。 */
+  private loginChallengeInput(): Locator {
+    return this.page.locator(
+      'input[placeholder*="验证码"]:not([placeholder*="短信"]):not([placeholder*="手机"]), ' +
+      'input[placeholder*="计算"], input[name*="captcha" i]'
+    ).filter({ visible: true }).first();
+  }
+
+  /** 只勾选文字明确表明为同意协议的复选框，不操作其他选项。 */
+  private async acceptLoginAgreement(): Promise<boolean> {
+    const labels = this.page.locator('label:visible').filter({ hasText: /同意/ });
+    const count = await labels.count();
+    if (count === 0) return false;
+    if (count !== 1) throw new Error('登录页存在多个“同意”选项，无法安全判断协议复选框，停止自动勾选。');
+
+    const label = labels.first();
+    const checkbox = label.locator('input[type="checkbox"]');
+    if (await checkbox.count() === 1) {
+      if (!await checkbox.isChecked()) await checkbox.check({ force: true });
+      return await checkbox.isChecked();
+    }
+
+    const roleCheckbox = label.getByRole('checkbox');
+    if (await roleCheckbox.count() === 1) {
+      if (!await roleCheckbox.isChecked()) await roleCheckbox.check();
+      return await roleCheckbox.isChecked();
+    }
+
+    throw new Error('识别到同意协议文字，但无法定位对应复选框；为避免误操作，停止登录。');
+  }
+
+  /** 点击获取短信验证码；如果按钮处于倒计时/禁用状态，不重复发送短信。 */
+  private async clickSmsRequest(): Promise<void> {
+    const buttons = this.page.locator('button:visible').filter({ hasText: /获取.*验证码|发送.*验证码/ });
+    if (await buttons.count() !== 1) throw new Error('无法唯一定位“获取短信验证码”按钮，请检查登录页面结构。');
+    const button = buttons.first();
+    if (await button.isDisabled()) {
+      const label = (await button.innerText()).trim();
+      if (/\\d+\\s*秒|已发送|重新获取/.test(label)) return;
+      throw new Error('获取短信验证码按钮当前不可用，未重复点击。');
+    }
+    await button.click();
+  }
+
+  /** 员工在聊天窗口提供计算题答案后，自动填写并请求短信验证码。 */
+  async requestSmsCode(challengeAnswer?: string): Promise<{ status: 'sms_code_required'; message: string }> {
+    const challengeInput = this.loginChallengeInput();
+    if (await challengeInput.count()) {
+      if (!challengeAnswer?.trim()) throw new Error('需要员工先提供登录页计算验证答案。');
+      await challengeInput.fill(challengeAnswer.trim());
+      await challengeInput.press('Tab');
+    }
+    await this.clickSmsRequest();
+    return { status: 'sms_code_required', message: '短信验证码已请求，请向员工询问短信验证码。' };
+  }
+
+  /** 员工在聊天窗口提供短信验证码后，自动填写并提交登录。 */
+  async submitSmsCode(code: string): Promise<void> {
+    const normalized = code.trim();
+    if (!/^\\d{4,8}$/.test(normalized)) throw new Error('短信验证码格式不正确，请检查位数后重试。');
+
+    const smsInput = this.page.locator(
+      'input[placeholder*="短信验证码"], input[placeholder*="手机验证码"], input[name*="sms" i]'
+    ).filter({ visible: true }).first();
+    await smsInput.waitFor({ state: 'visible', timeout: 10_000 });
+    await smsInput.fill(normalized);
+
+    const loginButton = this.page.locator('button:visible').filter({ hasText: /^\\s*登录\\s*$/ });
+    if (await loginButton.count() !== 1) throw new Error('无法唯一定位登录按钮，请检查登录页面结构。');
+    await loginButton.click();
+
+    const menu = this.page.getByText('端口上报管理', { exact: true }).filter({ visible: true }).first();
+    await menu.waitFor({ state: 'visible', timeout: Math.min(this.config.loginTimeoutMs, 60_000) });
+    await this.saveAuth();
+  }
+
+  /** 业务任务只复用已登录会话；未登录时立即提示 Agent 先走分阶段登录。 */
+  async login(): Promise<void> {
+    const menu = this.page.getByText('端口上报管理', { exact: true }).filter({ visible: true }).first();
+    if (!await menu.isVisible().catch(() => false)) {
+      throw new Error('当前云浏览器尚未登录。请先执行 login-start / login-verify / login-submit 分阶段登录，再运行业务任务。');
     }
     await this.saveAuth();
   }
