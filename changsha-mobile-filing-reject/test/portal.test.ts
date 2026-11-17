@@ -71,8 +71,8 @@ test('云浏览器模式复用现有标签页，关闭 Skill 只断开 CDP 连�
   const portal = await RejectPortal.launch(config);
   assert.equal(portal.page.url(), 'about:blank');
   await portal.close();
-  assert.equal(portal.page.isClosed(), false);
 
+  // 断开 CDP 后，原 Playwright Page 对象可能被标记为已关闭；应重新连接验证远端标签页仍存在。
   // 再次连接确认云浏览器进程和原标签页仍然存在。
   const verifyBrowser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   try {
