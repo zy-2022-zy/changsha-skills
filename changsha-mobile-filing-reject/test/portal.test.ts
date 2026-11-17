@@ -87,6 +87,11 @@ test('分阶段登录：自动填手机号并勾选协议，员工提供计算�
   const { page, dir } = await setup(t);
   const config = loadConfig({ LOGIN_PHONE: '13800138000', AUTH_DIR: dir, LOGIN_TIMEOUT_MS: '5000' });
   await page.route(config.baseUrl, r => r.fulfill({ contentType: 'text/html; charset=utf-8', body: `<body>
+    <style>
+      .agree-box { display: flex; align-items: center; gap: 8px; }
+      .el-checkbox__inner { display: inline-block; width: 16px; height: 16px; border: 1px solid #777; }
+      .el-checkbox__original { position: absolute; left: -10000px; width: 1px; height: 1px; }
+    </style>
     <div class="agree-box">
       <label class="el-checkbox"><span class="el-checkbox__input"><span class="el-checkbox__inner"></span><input id="agree" type="checkbox" class="el-checkbox__original"></span></label>
       <div class="agree-box-cc"><label class="agree-label">我已阅读并同意</label><a class="agree-link">《隐私协议》</a><a class="agree-link">《诚信承诺协议》</a></div>
