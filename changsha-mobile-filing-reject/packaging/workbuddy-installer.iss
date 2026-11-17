@@ -56,7 +56,7 @@ Source: "{#PayloadDir}\*"; DestDir: "{app}"; Excludes: ".generated-payload"; Fla
 Filename: "{app}\使用说明.txt"; Description: "查看{#ProductName}使用说明"; Flags: shellexec postinstall skipifsilent unchecked
 
 [Messages]
-WelcomeLabel2=本安装包将把“{#ProductName}”安装到 WorkBuddy 的技能目录。%n%n内置 Node.js 和所需依赖，无需另外安装 npm 或 pnpm。电脑需已安装 Chrome 或 Microsoft Edge。%n%n安装后可在 WorkBuddy 中调用，下载并生成 SEDP 上传文件。
+WelcomeLabel2=本安装包将把“{#ProductName}”安装到 WorkBuddy 的技能目录。%n%n内置 Node.js 和所需依赖，无需另外安装 npm 或 pnpm。默认本地浏览器模式需要 Chrome 或 Microsoft Edge；配置云浏览器 CDP 地址后，无需本机安装浏览器。%n%n安装后可在 WorkBuddy 中调用，下载并生成 SEDP 上传文件。
 FinishedLabel=技能已安装。请在 WorkBuddy 中刷新技能列表或新建任务，搜索“{#ProductName}”。若未显示，请重新打开 WorkBuddy。
 
 [Code]
@@ -225,8 +225,11 @@ var
   Config: String;
 begin
   if (CurStep = ssPostInstall) and (not ConfigExists) then begin
-    Config := '# WorkBuddy local settings. Preserved during upgrades.' + #13#10 +
+    Config := '# WorkBuddy 本机配置，升级安装时会保留。' + #13#10 +
       'LOGIN_PHONE=' + Trim(PhonePage.Values[0]) + #13#10 +
+      '# 云浏览器 CDP 地址；留空时使用本地浏览器。' + #13#10 +
+      'BROWSER_CDP_URL=' + #13#10 +
+      'BROWSER_CDP_CONNECT_TIMEOUT_MS=15000' + #13#10 +
       'BROWSER_CHANNEL=' + BrowserChannel + #13#10 +
       'MOBILE_PORTAL_BASE_URL=https://wap.hn.10086.cn/ismsports/' + #13#10 +
       'DOWNLOAD_DIR=' + DownloadPage.Values[0] + #13#10 +
