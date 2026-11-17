@@ -15,6 +15,9 @@ const help = `长沙移动系统集团驳回数据Skill（普通端口、视频�
   scripts\\run.cmd results --date YYYY-MM-DD
   scripts\\run.cmd inspect --file <已下载.xlsx> [--header-row 1]
   scripts\\run.cmd sedp --file <已下载.xlsx> [--output <SEDP.xlsx>]
+  scripts\\run.cmd login-start
+  scripts\\run.cmd login-verify --answer <员工提供的计算验证答案>
+  scripts\\run.cmd login-submit --sms-code-stdin
 不带 --execute 的 export 仅打印计划，不打开浏览器。
 results 只续查、下载已有任务。默认日期为北京时间前一个周一至周五，节假日/调休请指定日期。
 下载完成后自动生成 SEDP 上传格式（签名留空，报备结果固定为失败），--no-sedp 可跳过。
