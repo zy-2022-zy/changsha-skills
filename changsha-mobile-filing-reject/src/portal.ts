@@ -139,7 +139,14 @@ export class RejectPortal {
       }
 
       const checkbox = checkboxes.first();
-      if (!await checkbox.isChecked()) await checkbox.check({ force: true });
+      if (!await checkbox.isChecked()) {
+        // Element UI 会把原生 input 隐藏在可视区域之外，必须点击用户实际看到的复选框外观。
+        const visualCheckbox = agreementBox.locator('label.el-checkbox .el-checkbox__inner');
+        if (await visualCheckbox.count() !== 1 || !await visualCheckbox.isVisible()) {
+          throw new Error('协议复选框的可视点击区域不唯一或不可见，停止自动勾选。');
+        }
+        await visualCheckbox.click();
+      }
       return await checkbox.isChecked();
     }
 
