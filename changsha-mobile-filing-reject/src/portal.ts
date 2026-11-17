@@ -75,7 +75,12 @@ export class RejectPortal {
 
   /** 自动准备登录页面；遇到人机验证时把题目交给员工，不自动破解验证。 */
   async beginLogin(): Promise<{ status: 'authenticated' | 'challenge_required' | 'sms_code_required'; challenge?: string; agreementAccepted: boolean }> {
-    await this.page.goto(this.config.baseUrl, { waitUntil: 'domcontentloaded' });
+    // 已经位于门户登录页时不重新加载，避免清掉验证码倒计时或重复触发短信发送。
+    let currentOrigin = '';
+    try { currentOrigin = new URL(this.page.url()).origin; } catch { /* about:blank 等页面需要导航到门户。 */ }
+    if (currentOrigin !== new URL(this.config.baseUrl).origin) {
+      await this.page.goto(this.config.baseUrl, { waitUntil: 'domcontentloaded' });
+    }
     const menu = this.page.getByText('端口上报管理', { exact: true }).filter({ visible: true }).first();
     const phone = this.page.locator('input[placeholder*="手机号"], input[type="tel"], input[name*="phone" i]')
       .filter({ visible: true }).first();
