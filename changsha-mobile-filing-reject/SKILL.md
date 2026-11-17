@@ -144,10 +144,10 @@ WorkBuddy 支持 stdio MCP。将以下配置合并到 WorkBuddy 的 MCP Server �
   "mcpServers": {
     "changsha-mobile-filing-reject": {
       "type": "stdio",
-      "command": "pnpm",
-      "args": ["run", "mcp"],
+      "command": "cmd.exe",
+      "args": ["/d", "/s", "/c", "pnpm run mcp"],
       "cwd": "C:\\Users\\你的用户名\\路径\\changsha-mobile-filing-reject",
-      "timeout": 30000
+      "timeout": 120000
     }
   }
 }
