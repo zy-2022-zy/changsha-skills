@@ -20,6 +20,27 @@ export class RejectPortal {
   constructor(readonly page: Page, private readonly config: Config, private readonly browser?: Browser) {}
 
   static async launch(config: Config): Promise<RejectPortal> {
+    if (config.cdpUrl) {
+      const browser = await chromium.connectOverCDP(config.cdpUrl, { timeout: config.cdpConnectTimeoutMs });
+      try {
+        const context = browser.contexts()[0];
+        if (!context) throw new Error('云浏览器没有可用的默认浏览器上下文，请检查 Chromium 是否正常启动。');
+        const origin = new URL(config.baseUrl).origin;
+        const pages = context.pages();
+        // 优先复用门户原有标签页，避免新标签页丢失 sessionStorage 登录状态。
+        const page = pages.find(candidate => {
+          try { return new URL(candidate.url()).origin === origin; } catch { return false; }
+        }) ?? pages.find(candidate => candidate.url() === 'about:blank')
+          ?? (pages.length === 1 ? pages[0] : undefined)
+          ?? await context.newPage();
+        return new RejectPortal(page, config, browser);
+      } catch (e) {
+        await browser.close().catch(() => undefined);
+        throw e;
+      }
+    }
+
+    // 未配置云浏览器地址时，继续兼容原来的本地浏览器运行方式。
     await mkdir(config.authDir, { recursive: true });
     const browser = await chromium.launch({ headless: false, channel: config.browserChannel, args: ['--disable-gpu'] });
     try {
@@ -39,6 +60,8 @@ export class RejectPortal {
   }
 
   private async saveAuth(): Promise<void> {
+    // 云浏览器会在服务器端持久化登录状态，不把 Cookie 或会话信息复制到员工电脑。
+    if (this.config.cdpUrl) return;
     if (!await this.page.getByText('端口上报管理', { exact: true }).isVisible().catch(() => false)) return;
     await mkdir(this.config.authDir, { recursive: true });
     const storage = await this.page.context().storageState();
@@ -50,27 +73,186 @@ export class RejectPortal {
     }
   }
 
-  async login(): Promise<void> {
-    await this.page.goto(this.config.baseUrl, { waitUntil: 'domcontentloaded' });
+  /** 自动准备登录页面；图片或其他验证均交给员工处理，不自动识别、破解或绕过验证。 */
+  async beginLogin(): Promise<{ status: 'authenticated' | 'captcha_required' | 'challenge_required' | 'sms_code_required'; challenge?: string; captchaImagePath?: string; agreementAccepted: boolean }> {
+    // 已经位于门户登录页时不重新加载，避免清掉验证码倒计时或重复触发短信发送。
+    let currentOrigin = '';
+    try { currentOrigin = new URL(this.page.url()).origin; } catch { /* about:blank 等页面需要导航到门户。 */ }
+    if (currentOrigin !== new URL(this.config.baseUrl).origin) {
+      await this.page.goto(this.config.baseUrl, { waitUntil: 'domcontentloaded' });
+    }
     const menu = this.page.getByText('端口上报管理', { exact: true }).filter({ visible: true }).first();
     const phone = this.page.locator('input[placeholder*="手机号"], input[type="tel"], input[name*="phone" i]')
       .filter({ visible: true }).first();
-    // SPA 在 DOMContentLoaded 后才渲染登录表单，不能用瞬时 isVisible 跳过填写。
+
+    // SPA 在 DOMContentLoaded 后才渲染登录表单，等待登录菜单或手机号输入框出现。
     await menu.or(phone).first().waitFor({ state: 'visible', timeout: 30_000 });
-    if (!await menu.isVisible()) {
-      if (this.config.loginPhone) {
-        await phone.fill(this.config.loginPhone);
-        await phone.press('Tab');
-        if (await phone.inputValue() !== this.config.loginPhone) throw new Error('手机号填写后校验失败，请检查登录表单。');
-        console.error('登录手机号已自动填写并核验。');
+    if (await menu.isVisible().catch(() => false)) {
+      await this.saveAuth();
+      return { status: 'authenticated', agreementAccepted: false };
+    }
+
+    if (!this.config.loginPhone) throw new Error('未配置 LOGIN_PHONE，无法自动填写登录手机号。');
+    await phone.fill(this.config.loginPhone);
+    await phone.press('Tab');
+    if (await phone.inputValue() !== this.config.loginPhone) throw new Error('手机号填写后校验失败，请检查登录表单。');
+
+    const agreementAccepted = await this.acceptLoginAgreement();
+    const challengeInput = this.loginChallengeInput();
+    if (await challengeInput.count()) {
+      // 长沙移动当前登录页使用 img.login-code-img 展示图片验证码；只截图交给员工识别。
+      const captchaImages = this.page.locator('img.login-code-img:visible');
+      const captchaImageCount = await captchaImages.count();
+      if (captchaImageCount > 1) throw new Error('登录页存在多张可见验证码图片，无法安全判断应展示哪一张。');
+      if (captchaImageCount === 1) {
+        const captchaImage = captchaImages.first();
+        await captchaImage.waitFor({ state: 'visible', timeout: 5_000 });
+        const imagePath = path.join(this.config.stateDir, 'login-captcha.png');
+        await mkdir(this.config.stateDir, { recursive: true });
+        // 每次开始登录都重新截图并覆盖旧文件，避免把过期验证码交给员工。
+        await writeFile(imagePath, await captchaImage.screenshot({ type: 'png' }));
+        return {
+          status: 'captcha_required',
+          challenge: '请查看随结果返回的验证码图片，并将图片中的字符回复给 Agent。',
+          captchaImagePath: imagePath,
+          agreementAccepted,
+        };
       }
-      console.error('请在浏览器完成人工登录：手机号、计算题及短信验证码。程序会自动继续。');
-      await menu.waitFor({ state: 'visible', timeout: this.config.loginTimeoutMs });
+
+      const bodyText = await this.page.locator('body').innerText().catch(() => '');
+      const challenge = bodyText.split(/\r?\n/).map(line => line.trim())
+        .find(line => /计算|算式|验证码/.test(line) && /[0-9０-９].*[+＋\-－×xX*÷／/=]/.test(line))
+        ?? bodyText.split(/\r?\n/).map(line => line.trim()).find(line => /计算|算式|验证码/.test(line))
+        ?? '登录页要求完成其他验证，请查看页面提示并把验证内容转发给员工。';
+      return { status: 'challenge_required', challenge: challenge.slice(0, 240), agreementAccepted };
+    }
+
+    // 未发现可见的验证码输入框时才继续检查短信按钮；不会尝试破解或跳过验证码。
+    await this.clickSmsRequest();
+    return { status: 'sms_code_required', agreementAccepted };
+  }
+
+  /** 定位非短信验证码输入框，供员工提供图片验证码或其他人工验证答案。 */
+  private loginChallengeInput(): Locator {
+    return this.page.locator(
+      'input[placeholder*="验证码"]:not([placeholder*="短信"]):not([placeholder*="手机"]), ' +
+      'input[placeholder*="计算"], input[name*="captcha" i]'
+    ).filter({ visible: true }).first();
+  }
+
+  /** 只勾选文字明确表明为同意协议的复选框，不操作其他选项。 */
+  private async acceptLoginAgreement(): Promise<boolean> {
+    // 长沙移动门户使用 Element UI：协议文字与复选框是同级区域，不在 label 内部。
+    const agreementLabels = this.page.locator('label.agree-label:visible').filter({ hasText: /我已阅读并同意/ });
+    const agreementCount = await agreementLabels.count();
+    if (agreementCount > 0) {
+      if (agreementCount !== 1) {
+        throw new Error('登录页存在多个协议说明，无法安全判断对应复选框，停止自动勾选。');
+      }
+
+      // 从协议文字向上找到 .agree-box，再只检查该容器内的复选框。
+      const agreementBox = agreementLabels.first().locator('xpath=../..');
+      const checkboxes = agreementBox.locator('input[type="checkbox"]');
+      if (await agreementBox.locator('label.agree-label').count() !== 1 || await checkboxes.count() !== 1) {
+        throw new Error('协议区域未包含唯一复选框；为避免误操作，停止登录。');
+      }
+
+      const checkbox = checkboxes.first();
+      if (!await checkbox.isChecked()) {
+        // Element UI 会把原生 input 隐藏在可视区域之外，必须点击用户实际看到的复选框外观。
+        const visualCheckbox = agreementBox.locator('label.el-checkbox .el-checkbox__inner');
+        if (await visualCheckbox.count() !== 1 || !await visualCheckbox.isVisible()) {
+          throw new Error('协议复选框的可视点击区域不唯一或不可见，停止自动勾选。');
+        }
+        await visualCheckbox.click();
+      }
+      return await checkbox.isChecked();
+    }
+
+    // 兼容其他版本中“同意”文字直接包裹标准复选框的页面结构。
+    const labels = this.page.locator('label:visible').filter({ hasText: /同意/ });
+    const count = await labels.count();
+    if (count === 0) return false;
+    if (count !== 1) throw new Error('登录页存在多个“同意”选项，无法安全判断协议复选框，停止自动勾选。');
+
+    const label = labels.first();
+    const checkbox = label.locator('input[type="checkbox"]');
+    if (await checkbox.count() === 1) {
+      if (!await checkbox.isChecked()) await checkbox.check({ force: true });
+      return await checkbox.isChecked();
+    }
+
+    const roleCheckbox = label.getByRole('checkbox');
+    if (await roleCheckbox.count() === 1) {
+      if (!await roleCheckbox.isChecked()) await roleCheckbox.check();
+      return await roleCheckbox.isChecked();
+    }
+
+    throw new Error('识别到同意协议文字，但无法定位对应复选框；为避免误操作，停止登录。');
+  }
+
+  /** 点击获取短信验证码；如果按钮处于倒计时/禁用状态，不重复发送短信。 */
+  private async clickSmsRequest(): Promise<void> {
+    const buttons = this.page.locator('button:visible').filter({ hasText: /获取.*验证码|发送.*验证码/ });
+    if (await buttons.count() !== 1) throw new Error('无法唯一定位“获取短信验证码”按钮，请检查登录页面结构。');
+    const button = buttons.first();
+    if (await button.isDisabled()) {
+      const label = (await button.innerText()).trim();
+      if (/\d+\s*秒|已发送|重新获取/.test(label)) return;
+      throw new Error('获取短信验证码按钮当前不可用，未重复点击。');
+    }
+    await button.click();
+  }
+
+  /** 员工在聊天窗口提供图片验证码或其他人工验证答案后，自动填写并请求短信验证码。 */
+  async requestSmsCode(challengeAnswer?: string): Promise<{ status: 'sms_code_required'; message: string }> {
+    const challengeInput = this.loginChallengeInput();
+    if (await challengeInput.count()) {
+      if (!challengeAnswer?.trim()) throw new Error('需要员工先提供登录页图片验证码或其他验证答案。');
+      await challengeInput.fill(challengeAnswer.trim());
+      await challengeInput.press('Tab');
+    } else if (challengeAnswer?.trim()) {
+      throw new Error('当前页面没有可见的验证码输入框，拒绝提交可能过期或不匹配的验证答案。');
+    }
+    await this.clickSmsRequest();
+    return { status: 'sms_code_required', message: '短信验证码已请求，请向员工询问短信验证码。' };
+  }
+
+  /** 员工在聊天窗口提供短信验证码后，自动填写并提交登录。 */
+  async submitSmsCode(code: string): Promise<void> {
+    const normalized = code.trim();
+    if (!/^\d{4,8}$/.test(normalized)) throw new Error('短信验证码格式不正确，请检查位数后重试。');
+
+    const smsInput = this.page.locator(
+      'input[placeholder*="短信验证码"], input[placeholder*="手机验证码"], input[name*="sms" i]'
+    ).filter({ visible: true }).first();
+    await smsInput.waitFor({ state: 'visible', timeout: 10_000 });
+    await smsInput.fill(normalized);
+
+    const loginButton = this.page.locator('button:visible').filter({ hasText: /^\s*登\s*录\s*$/ });
+    if (await loginButton.count() !== 1) throw new Error('无法唯一定位登录按钮，请检查登录页面结构。');
+    await loginButton.click();
+
+    const menu = this.page.getByText('端口上报管理', { exact: true }).filter({ visible: true }).first();
+    await menu.waitFor({ state: 'visible', timeout: Math.min(this.config.loginTimeoutMs, 60_000) });
+    await this.saveAuth();
+  }
+
+  /** 业务任务只复用已登录会话；未登录时立即提示 Agent 先走分阶段登录。 */
+  async login(): Promise<void> {
+    const menu = this.page.getByText('端口上报管理', { exact: true }).filter({ visible: true }).first();
+    if (!await menu.isVisible().catch(() => false)) {
+      throw new Error('当前云浏览器尚未登录。请先执行 login-start / login-verify / login-submit 分阶段登录，再运行业务任务。');
     }
     await this.saveAuth();
   }
 
   async close(): Promise<void> {
+    if (this.config.cdpUrl) {
+      // 只断开 Playwright 的 CDP 连接，不关闭云浏览器、上下文或当前标签页。
+      await this.browser?.close().catch(() => undefined);
+      return;
+    }
     await this.saveAuth().catch(() => undefined);
     await this.page.context().close().catch(() => undefined);
     await this.browser?.close();

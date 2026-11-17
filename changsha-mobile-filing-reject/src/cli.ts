@@ -6,6 +6,7 @@ import path from 'node:path';
 import { inspectWorkbook } from './workbook.js';
 import { generateSedpWorkbook } from './sedp.js';
 import { run } from './runner.js';
+import { RejectPortal } from './portal.js';
 
 const help = `长沙移动系统集团驳回数据Skill（普通端口、视频短信）
   scripts\\run.cmd export [--date YYYY-MM-DD | --start YYYY-MM-DD --end YYYY-MM-DD]
@@ -14,11 +15,14 @@ const help = `长沙移动系统集团驳回数据Skill（普通端口、视频�
   scripts\\run.cmd results --date YYYY-MM-DD
   scripts\\run.cmd inspect --file <已下载.xlsx> [--header-row 1]
   scripts\\run.cmd sedp --file <已下载.xlsx> [--output <SEDP.xlsx>]
+  scripts\\run.cmd login-start
+  scripts\\run.cmd login-verify --answer <员工提供的图片验证码或其他验证答案>
+  scripts\\run.cmd login-submit --sms-code-stdin
 不带 --execute 的 export 仅打印计划，不打开浏览器。
 results 只续查、下载已有任务。默认日期为北京时间前一个周一至周五，节假日/调休请指定日期。
 下载完成后自动生成 SEDP 上传格式（签名留空，报备结果固定为失败），--no-sedp 可跳过。
-EXE 安装版内置运行环境，直接使用 scripts\\run.cmd。电脑需已安装 Chrome 或 Edge。
-开发源码首次使用才需要 pnpm install；chromium 需 pnpm exec playwright install chromium。`;
+EXE 安装版内置运行环境，直接使用 scripts\\run.cmd。配置 BROWSER_CDP_URL 可连接云浏览器；留空时使用本机 Chrome 或 Edge。
+开发源码首次使用才需要 pnpm install；本地 Chromium 模式需 pnpm exec playwright install chromium。\n登录分阶段执行：login-start 准备页面并返回验证码图片路径或其他验证提示；Agent 展示图片给员工，login-verify 填入员工答案并请求短信；login-submit 从标准输入读取短信验证码。验证码不写入日志或配置文件。`;
 
 async function main(): Promise<void> {
   await loadOptionalEnvFile();
@@ -28,7 +32,7 @@ async function main(): Promise<void> {
     date: { type: 'string' }, start: { type: 'string' }, end: { type: 'string' },
     'batch-id': { type: 'string' }, execute: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
     file: { type: 'string' }, 'header-row': { type: 'string' }, output: { type: 'string' },
-    'no-sedp': { type: 'boolean' },
+    'no-sedp': { type: 'boolean' }, answer: { type: 'string' }, 'sms-code-stdin': { type: 'boolean' },
   } });
   if (values.help || !positionals.length) { console.log(help); return; }
   if (positionals.length !== 1) throw new Error('只接受一个命令。');
@@ -37,9 +41,30 @@ async function main(): Promise<void> {
     export: ['date', 'start', 'end', 'execute', 'header-row', 'no-sedp'],
     results: ['date', 'start', 'end', 'batch-id', 'header-row', 'no-sedp'],
     inspect: ['file', 'header-row'], sedp: ['file', 'output', 'header-row'],
+    'login-start': [], 'login-verify': ['answer'], 'login-submit': ['sms-code-stdin'],
   };
   if (!allowed[command]) throw new Error(`未知命令：${command}`);
   for (const key of Object.keys(values)) if (!allowed[command].includes(key)) throw new Error(`${command} 不支持 --${key}。`);
+  if (command === 'login-start' || command === 'login-verify' || command === 'login-submit') {
+    const config = loadConfig();
+    const portal = await RejectPortal.launch(config);
+    try {
+      if (command === 'login-start') {
+        console.log(JSON.stringify(await portal.beginLogin(), null, 2));
+      } else if (command === 'login-verify') {
+        console.log(JSON.stringify(await portal.requestSmsCode(values.answer), null, 2));
+      } else {
+        if (!values['sms-code-stdin']) throw new Error('login-submit 必须使用 --sms-code-stdin，从标准输入安全读取短信验证码。');
+        let code = '';
+        for await (const chunk of process.stdin) code += String(chunk);
+        code = code.trim();
+        if (!code) throw new Error('标准输入中没有收到短信验证码。');
+        await portal.submitSmsCode(code);
+        console.log(JSON.stringify({ status: 'authenticated', message: '登录成功。' }, null, 2));
+      }
+    } finally { await portal.close(); }
+    return;
+  }
   const headerRow = values['header-row'] === undefined ? undefined : Number(values['header-row']);
   if (headerRow !== undefined && (!Number.isSafeInteger(headerRow) || headerRow < 1)) throw new Error('--header-row 必须是正整数。');
   if (command === 'inspect') {
