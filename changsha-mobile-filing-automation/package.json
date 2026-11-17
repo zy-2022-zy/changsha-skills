@@ -1,0 +1,26 @@
+{
+  "name": "changsha-mobile-filing-automation",
+  "version": "1.0.1",
+  "private": true,
+  "description": "湖南移动行业端口实名校验登记系统的人工登录辅助自动化工具",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/cli.ts",
+    "service": "tsx src/cli.ts serve",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/**/*.test.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0"
+  },
+  "dependencies": {
+    "jszip": "^3.10.2",
+    "playwright": "^1.55.0",
+    "xlsx": "^0.18.5"
+  }
+}

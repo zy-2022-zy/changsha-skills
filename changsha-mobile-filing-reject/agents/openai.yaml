@@ -1,0 +1,4 @@
+interface:
+  display_name: "长沙移动系统集团驳回数据Skill"
+  short_description: "按日期导出普通端口和视频短信的集团驳回结果，支持批次续查、文件计数并转成 SEDP 上传格式"
+  default_prompt: "使用 $长沙移动系统集团驳回数据Skill 导出上一个工作日的集团驳回报备结果，生成 SEDP 上传文件，并报告实际记录数。"

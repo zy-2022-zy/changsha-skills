@@ -1,0 +1,19 @@
+{
+  "name": "changsha-mobile-group-reject-data-skill",
+  "productName": "长沙移动系统集团驳回数据Skill",
+  "version": "1.1.1",
+  "private": true,
+  "type": "module",
+  "description": "长沙移动普通端口及视频短信集团驳回结果导出技能",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "build:package": "node scripts/build-package.mjs",
+    "build:installer": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-installer.ps1",
+    "test:installer": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/test-installer.ps1"
+  },
+  "dependencies": { "playwright": "^1.55.0", "xlsx": "^0.18.5" },
+  "devDependencies": { "@types/node": "^24.0.0", "tsx": "^4.20.0", "typescript": "^5.8.0" }
+}

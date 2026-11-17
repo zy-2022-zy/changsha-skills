@@ -1,0 +1,7 @@
+
+> changsha-mobile-filing-automation@0.1.0 service G:\code\shimingbaobei\code\changsha-mobile-filing-automation
+> tsx src/cli.ts serve
+
+智能体服务已启动：http://127.0.0.1:8787
+POST /v1/jobs 提交任务，GET /v1/jobs/:jobId 查询任务，GET /health 检查服务。
+ ELIFECYCLE  Command failed with exit code 4294967295.
