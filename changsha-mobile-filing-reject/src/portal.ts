@@ -73,8 +73,8 @@ export class RejectPortal {
     }
   }
 
-  /** 自动准备登录页面；遇到人机验证时把题目交给员工，不自动破解验证。 */
-  async beginLogin(): Promise<{ status: 'authenticated' | 'challenge_required' | 'sms_code_required'; challenge?: string; agreementAccepted: boolean }> {
+  /** 自动准备登录页面；图片或其他验证均交给员工处理，不自动识别、破解或绕过验证。 */
+  async beginLogin(): Promise<{ status: 'authenticated' | 'captcha_required' | 'challenge_required' | 'sms_code_required'; challenge?: string; captchaImagePath?: string; agreementAccepted: boolean }> {
     // 已经位于门户登录页时不重新加载，避免清掉验证码倒计时或重复触发短信发送。
     let currentOrigin = '';
     try { currentOrigin = new URL(this.page.url()).origin; } catch { /* about:blank 等页面需要导航到门户。 */ }
@@ -100,20 +100,39 @@ export class RejectPortal {
     const agreementAccepted = await this.acceptLoginAgreement();
     const challengeInput = this.loginChallengeInput();
     if (await challengeInput.count()) {
+      // 长沙移动当前登录页使用 img.login-code-img 展示图片验证码；只截图交给员工识别。
+      const captchaImages = this.page.locator('img.login-code-img:visible');
+      const captchaImageCount = await captchaImages.count();
+      if (captchaImageCount > 1) throw new Error('登录页存在多张可见验证码图片，无法安全判断应展示哪一张。');
+      if (captchaImageCount === 1) {
+        const captchaImage = captchaImages.first();
+        await captchaImage.waitFor({ state: 'visible', timeout: 5_000 });
+        const imagePath = path.join(this.config.stateDir, 'login-captcha.png');
+        await mkdir(this.config.stateDir, { recursive: true });
+        // 每次开始登录都重新截图并覆盖旧文件，避免把过期验证码交给员工。
+        await writeFile(imagePath, await captchaImage.screenshot({ type: 'png' }));
+        return {
+          status: 'captcha_required',
+          challenge: '请查看随结果返回的验证码图片，并将图片中的字符回复给 Agent。',
+          captchaImagePath: imagePath,
+          agreementAccepted,
+        };
+      }
+
       const bodyText = await this.page.locator('body').innerText().catch(() => '');
       const challenge = bodyText.split(/\r?\n/).map(line => line.trim())
         .find(line => /计算|算式|验证码/.test(line) && /[0-9０-９].*[+＋\-－×xX*÷／/=]/.test(line))
         ?? bodyText.split(/\r?\n/).map(line => line.trim()).find(line => /计算|算式|验证码/.test(line))
-        ?? '登录页要求完成计算/验证码验证，请查看页面提示并把题目转发给员工。';
+        ?? '登录页要求完成其他验证，请查看页面提示并把验证内容转发给员工。';
       return { status: 'challenge_required', challenge: challenge.slice(0, 240), agreementAccepted };
     }
 
-    // 未发现独立计算验证输入框时，尝试直接请求短信；不触碰图片验证码或其他人机验证。
+    // 未发现可见的验证码输入框时才继续检查短信按钮；不会尝试破解或跳过验证码。
     await this.clickSmsRequest();
     return { status: 'sms_code_required', agreementAccepted };
   }
 
-  /** 定位非短信验证码输入框，供员工提供普通计算题答案。 */
+  /** 定位非短信验证码输入框，供员工提供图片验证码或其他人工验证答案。 */
   private loginChallengeInput(): Locator {
     return this.page.locator(
       'input[placeholder*="验证码"]:not([placeholder*="短信"]):not([placeholder*="手机"]), ' +
@@ -185,13 +204,15 @@ export class RejectPortal {
     await button.click();
   }
 
-  /** 员工在聊天窗口提供计算题答案后，自动填写并请求短信验证码。 */
+  /** 员工在聊天窗口提供图片验证码或其他人工验证答案后，自动填写并请求短信验证码。 */
   async requestSmsCode(challengeAnswer?: string): Promise<{ status: 'sms_code_required'; message: string }> {
     const challengeInput = this.loginChallengeInput();
     if (await challengeInput.count()) {
-      if (!challengeAnswer?.trim()) throw new Error('需要员工先提供登录页计算验证答案。');
+      if (!challengeAnswer?.trim()) throw new Error('需要员工先提供登录页图片验证码或其他验证答案。');
       await challengeInput.fill(challengeAnswer.trim());
       await challengeInput.press('Tab');
+    } else if (challengeAnswer?.trim()) {
+      throw new Error('当前页面没有可见的验证码输入框，拒绝提交可能过期或不匹配的验证答案。');
     }
     await this.clickSmsRequest();
     return { status: 'sms_code_required', message: '短信验证码已请求，请向员工询问短信验证码。' };
