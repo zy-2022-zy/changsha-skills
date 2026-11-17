@@ -104,3 +104,53 @@ description: 按日期导出长沙移动行业端口实名校验登记系统中�
 不把本流程扩展为重新上报、删除端口、代客户上传 SEDP、自动发送消息或 5G 导出。普通端口和视频短信按文档使用相同入口，不凭空增加未提供的类型筛选。
 
 开发验证：`pnpm run typecheck`、`pnpm test`。本地模拟验证不能替代客户完成登录后的门户联调。
+## WorkBuddy MCP 交互登录（推荐）
+
+本技能提供本地 stdio MCP Server，供 WorkBuddy 调用。MCP Server 复用本目录现有 RejectPortal 登录实现和云浏览器 CDP 配置，不另起浏览器、不复制 Cookie。
+
+### MCP 工具
+
+- login_start：自动打开门户、填写 LOGIN_PHONE、勾选明确的隐私协议，并检查登录状态。若门户返回图片验证码，工具同时返回验证码图片内容（MCP image），Agent 必须把图片展示给员工并等待员工回复；不能只展示本地文件路径。
+- login_verify_captcha(answer)：只接受员工在当前对话中提供的图形验证码/其他人工验证答案；提交后请求短信验证码。没有员工答案时不得调用。
+- login_submit_sms(sms_code)：只接受员工从手机收到并亲自提供的短信验证码；提交后检查登录成功。不得猜测、代收或绕过验证码。
+
+### 本地启动 MCP Server
+
+在技能目录执行 pnpm install --frozen-lockfile，配置本机 .env（至少设置 LOGIN_PHONE 和 BROWSER_CDP_URL），并确保 SSH 隧道持续运行。然后使用：
+
+```powershell
+pnpm run mcp
+```
+
+该进程使用 stdio 与 WorkBuddy 通信，正常启动时不会向终端输出日志。不要在普通终端单独启动后再期待它像 HTTP 服务一样监听端口；应由 WorkBuddy MCP 客户端拉起。
+
+### Agent 交互规则
+
+1. 用户提出业务请求且门户未登录时，调用 login_start。
+2. 返回 captcha_required 时，先把 MCP 返回的图片直接展示给员工，再询问图片字符；拿到回答后才调用 login_verify_captcha。
+3. 返回 challenge_required 时，把页面提示原样转述给员工，收到答案后再调用 login_verify_captcha。
+4. 返回短信验证码等待状态时，询问员工手机短信验证码；收到后调用 login_submit_sms。
+5. 只有工具明确返回 authenticated 才能告知登录成功并继续业务。
+6. 登录过程中的验证码只在工具参数和内存中短暂传递，不写入日志、环境文件或状态文件。
+
+当前云浏览器是单实例共享会话，MCP Server 对登录步骤串行处理；这版只用于单员工联调，不支持多员工同时登录/操作。不要将 CDP 端口暴露到公网，也不要在 noVNC 中同时手动操作。
+
+### WorkBuddy 本地 MCP 配置示例
+
+WorkBuddy 支持 stdio MCP。将以下配置合并到 WorkBuddy 的 MCP Server 配置中；把 cwd 改成该技能目录的绝对路径：
+
+```json
+{
+  "mcpServers": {
+    "changsha-mobile-filing-reject": {
+      "type": "stdio",
+      "command": "pnpm",
+      "args": ["run", "mcp"],
+      "cwd": "C:\\Users\\你的用户名\\路径\\changsha-mobile-filing-reject",
+      "timeout": 30000
+    }
+  }
+}
+```
+
+如果 WorkBuddy 当前版本不支持 cwd，请将 command 设置为 pnpm 可执行文件绝对路径，并在 WorkBuddy MCP 配置中使用其支持的工作目录设置；不要把 .env 内容直接写入 MCP 配置。
