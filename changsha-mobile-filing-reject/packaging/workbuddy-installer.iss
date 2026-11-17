@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "1.1.1"
+  #define AppVersion "1.1.2"
 #endif
 #ifndef InstallerGuid
   #define InstallerGuid "698B8D5D-96AF-4B7F-A7AA-2F82C34B8BDD"
@@ -154,7 +154,7 @@ var
   DefaultDownload: String;
 begin
   PhonePage := CreateInputQueryPage(wpSelectDir, '本机登录设置', '填写手机号后，登录时可自动填入。',
-    '手机号可留空。计算题和短信验证码由你在浏览器完成。升级安装会保留已有配置。');
+    '手机号可留空。登录验证由 Agent 协助完成；如页面要求人机验证或短信验证码，请在聊天窗口按提示提供答案。升级安装会保留已有配置。');
   PhonePage.Add('登录手机号（可选）：', False);
   PhonePage.Values[0] := ExpandConstant('{param:LoginPhone|}');
 
