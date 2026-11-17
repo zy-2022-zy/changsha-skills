@@ -123,6 +123,27 @@ export class RejectPortal {
 
   /** 只勾选文字明确表明为同意协议的复选框，不操作其他选项。 */
   private async acceptLoginAgreement(): Promise<boolean> {
+    // 长沙移动门户使用 Element UI：协议文字与复选框是同级区域，不在 label 内部。
+    const agreementLabels = this.page.locator('label.agree-label:visible').filter({ hasText: /我已阅读并同意/ });
+    const agreementCount = await agreementLabels.count();
+    if (agreementCount > 0) {
+      if (agreementCount !== 1) {
+        throw new Error('登录页存在多个协议说明，无法安全判断对应复选框，停止自动勾选。');
+      }
+
+      // 从协议文字向上找到 .agree-box，再只检查该容器内的复选框。
+      const agreementBox = agreementLabels.first().locator('xpath=../..');
+      const checkboxes = agreementBox.locator('input[type="checkbox"]');
+      if (await agreementBox.locator('label.agree-label').count() !== 1 || await checkboxes.count() !== 1) {
+        throw new Error('协议区域未包含唯一复选框；为避免误操作，停止登录。');
+      }
+
+      const checkbox = checkboxes.first();
+      if (!await checkbox.isChecked()) await checkbox.check({ force: true });
+      return await checkbox.isChecked();
+    }
+
+    // 兼容其他版本中“同意”文字直接包裹标准复选框的页面结构。
     const labels = this.page.locator('label:visible').filter({ hasText: /同意/ });
     const count = await labels.count();
     if (count === 0) return false;
