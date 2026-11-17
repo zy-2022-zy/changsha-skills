@@ -37,7 +37,7 @@ test('WorkBuddy MCP Server 完成初始化并公开三个分阶段登录工具',
       pending.delete(id);
       resolve(value);
     });
-    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, ...(params ? { params } : {}) }) + '\\n');
+    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, ...(params ? { params } : {}) }) + '\n');
   });
 
   const initialized = await request(1, 'initialize', {
@@ -47,7 +47,7 @@ test('WorkBuddy MCP Server 完成初始化并公开三个分阶段登录工具',
   });
   assert.ok(initialized.result);
 
-  child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\\n');
+  child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
 
   const listed = await request(2, 'tools/list');
   const result = listed.result as { tools?: Array<{ name: string }> };
