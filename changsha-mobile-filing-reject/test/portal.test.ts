@@ -121,12 +121,12 @@ test('图片验证码登录：保存最新验证码图片，员工提供答案�
   const image = await readFile(start.captchaImagePath!);
   assert.ok(image.length > 100);
   assert.equal(image.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
-  assert.equal(await page.getByPlaceholder('请输入验证码').inputValue(), '');
+  assert.equal(await page.locator('input[placeholder="验证码"]').inputValue(), '');
   assert.equal(await page.locator('#state').innerText(), '');
 
   const requested = await portal.requestSmsCode('A7B9');
   assert.equal(requested.status, 'sms_code_required');
-  assert.equal(await page.getByPlaceholder('请输入验证码').inputValue(), 'A7B9');
+  assert.equal(await page.locator('input[placeholder="验证码"]').inputValue(), 'A7B9');
   assert.equal(await page.locator('#state').innerText(), '短信已发送');
 });
 
