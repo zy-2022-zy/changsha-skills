@@ -15,6 +15,7 @@ test('WorkBuddy MCP Server 完成初始化并公开三个分阶段登录工具',
   t.after(() => {
     if (!child.killed) child.kill();
   });
+  if (!child.stdout || !child.stdin) throw new Error('MCP 测试进程的标准输入输出管道未创建。');
 
   const lines = createInterface({ input: child.stdout });
   const pending = new Map<number, (value: Record<string, unknown>) => void>();
