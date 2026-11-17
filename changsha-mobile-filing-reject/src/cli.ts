@@ -16,13 +16,13 @@ const help = `长沙移动系统集团驳回数据Skill（普通端口、视频�
   scripts\\run.cmd inspect --file <已下载.xlsx> [--header-row 1]
   scripts\\run.cmd sedp --file <已下载.xlsx> [--output <SEDP.xlsx>]
   scripts\\run.cmd login-start
-  scripts\\run.cmd login-verify --answer <员工提供的计算验证答案>
+  scripts\\run.cmd login-verify --answer <员工提供的图片验证码或其他验证答案>
   scripts\\run.cmd login-submit --sms-code-stdin
 不带 --execute 的 export 仅打印计划，不打开浏览器。
 results 只续查、下载已有任务。默认日期为北京时间前一个周一至周五，节假日/调休请指定日期。
 下载完成后自动生成 SEDP 上传格式（签名留空，报备结果固定为失败），--no-sedp 可跳过。
 EXE 安装版内置运行环境，直接使用 scripts\\run.cmd。配置 BROWSER_CDP_URL 可连接云浏览器；留空时使用本机 Chrome 或 Edge。
-开发源码首次使用才需要 pnpm install；本地 Chromium 模式需 pnpm exec playwright install chromium。\n登录分阶段执行：login-start 准备页面并返回需要员工处理的验证题；login-verify 填入员工答案并请求短信；login-submit 从标准输入读取短信验证码。验证码不写入日志或配置文件。`;
+开发源码首次使用才需要 pnpm install；本地 Chromium 模式需 pnpm exec playwright install chromium。\n登录分阶段执行：login-start 准备页面并返回验证码图片路径或其他验证提示；Agent 展示图片给员工，login-verify 填入员工答案并请求短信；login-submit 从标准输入读取短信验证码。验证码不写入日志或配置文件。`;
 
 async function main(): Promise<void> {
   await loadOptionalEnvFile();
