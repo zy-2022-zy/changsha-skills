@@ -5,6 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createServer } from 'node:http';
+import { createServer as createNetServer } from 'node:net';
 import XLSX from 'xlsx';
 import { RejectPortal } from '../src/portal.js';
 import { loadConfig } from '../src/config.js';
@@ -22,6 +23,20 @@ async function setup(t: { after: (fn: () => Promise<unknown>) => void }) {
   const page = await context.newPage();
   const config = loadConfig({ DOWNLOAD_DIR: dir, RESULT_POLL_TIMEOUT_MS: '5000', RESULT_POLL_INTERVAL_MS: '10' });
   return { page, portal: new RejectPortal(page, config), dir };
+}
+
+async function getFreePort(): Promise<number> {
+  const server = createNetServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  await new Promise<void>((resolve, reject) => {
+    server.close(error => error ? reject(error) : resolve());
+  });
+  return address.port;
 }
 
 async function render(page: Page, html: string, rows: unknown[][] = [['端口', '端口类型', '驳回类型', '驳回原因'], ['1068', '真实端口', '集团驳回', '原因'], ['1069', '真实端口', '集团驳回', '原因']]) {
@@ -43,6 +58,30 @@ async function render(page: Page, html: string, rows: unknown[][] = [['端口', 
   assert.ok(address && typeof address !== 'string');
   await page.goto(`http://127.0.0.1:${address.port}/`);
 }
+
+test('云浏览器模式复用现有标签页，关闭 Skill 只断开 CDP 连接', async t => {
+  const port = await getFreePort();
+  const browser = await chromium.launch({ headless: true, args: [`--remote-debugging-port=${port}`] });
+  t.after(async () => { await browser.close(); });
+  const context = await browser.newContext({ acceptDownloads: true });
+  const page = await context.newPage();
+  await page.goto('about:blank');
+
+  const config = loadConfig({ BROWSER_CDP_URL: `http://127.0.0.1:${port}` });
+  const portal = await RejectPortal.launch(config);
+  assert.equal(portal.page.url(), 'about:blank');
+  await portal.close();
+  assert.equal(portal.page.isClosed(), false);
+
+  // 再次连接确认云浏览器进程和原标签页仍然存在。
+  const verifyBrowser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+  try {
+    const pages = verifyBrowser.contexts().flatMap(item => item.pages());
+    assert.ok(pages.some(item => item.url() === 'about:blank'));
+  } finally {
+    await verifyBrowser.close();
+  }
+});
 
 test('登录表单延迟渲染时仍填写并核验手机号，不填写两类验证码', async t => {
   const { page, dir } = await setup(t);
