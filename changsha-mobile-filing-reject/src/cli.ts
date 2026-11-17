@@ -17,8 +17,8 @@ const help = `长沙移动系统集团驳回数据Skill（普通端口、视频�
 不带 --execute 的 export 仅打印计划，不打开浏览器。
 results 只续查、下载已有任务。默认日期为北京时间前一个周一至周五，节假日/调休请指定日期。
 下载完成后自动生成 SEDP 上传格式（签名留空，报备结果固定为失败），--no-sedp 可跳过。
-EXE 安装版内置运行环境，直接使用 scripts\\run.cmd。电脑需已安装 Chrome 或 Edge。
-开发源码首次使用才需要 pnpm install；chromium 需 pnpm exec playwright install chromium。`;
+EXE 安装版内置运行环境，直接使用 scripts\\run.cmd。配置 BROWSER_CDP_URL 可连接云浏览器；留空时使用本机 Chrome 或 Edge。
+开发源码首次使用才需要 pnpm install；本地 Chromium 模式需 pnpm exec playwright install chromium。`;
 
 async function main(): Promise<void> {
   await loadOptionalEnvFile();
