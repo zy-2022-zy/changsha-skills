@@ -25,6 +25,14 @@ test('日期范围使用北京时间，跳过周末，拒绝无效或矛盾日�
   assert.throws(() => dateRange({ start: '2026-10-23', end: '2026-10-22' }));
 });
 
+test('云浏览器 CDP 配置可选，且只接受有效的连接协议', () => {
+  assert.equal(loadConfig({}).cdpUrl, undefined);
+  const cloud = loadConfig({ BROWSER_CDP_URL: 'http://127.0.0.1:19222' });
+  assert.equal(cloud.cdpUrl, 'http://127.0.0.1:19222');
+  assert.equal(cloud.cdpConnectTimeoutMs, 15_000);
+  assert.throws(() => loadConfig({ BROWSER_CDP_URL: 'file:///tmp/chrome' }), /BROWSER_CDP_URL/);
+});
+
 test('批次号保留完整字符串，不匹配相邻任务或未完成状态', () => {
   const id = '2110281444303654914';
   assert.equal(parseBatch(`批次号为：${id}`), id);
